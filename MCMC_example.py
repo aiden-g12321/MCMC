@@ -1,5 +1,6 @@
 from MCMC_structures import *
 import numpy as np
+from time import time
 
 
 ###################################################################
@@ -48,7 +49,11 @@ num_samples = int(1e5)
 mcmc = MCMC(model, num_samples, jump_blend, num_chains, len_history)
 
 # do MCMC!
+time_start = time()
 chains = mcmc.get_chains()
+time_stop = time()
+duration = time_stop - time_start
+print('Completed ' + str(num_samples) + ' MCMC iterations in ' + str(duration) + ' s.')
 
 
 ###################################################################
@@ -58,6 +63,7 @@ chains = mcmc.get_chains()
 params_injs = [[0., -9./8.], [0., 2.]]
 pp = PostProcessing(model, chains, mcmc, params_injs)
 
+print('acceptance fraction per chains:')
 print(pp.get_acc_frac())
 pp.plt_trace()
 pp.plt_lnlikes()
