@@ -4,7 +4,7 @@ import corner
 
 
 
-# class structure for parameters
+# class structure for model
 class Model:
     
     def __init__(self, num_params, param_mins, param_maxs, param_labels, in_domain_func, lnlike_func, lnprior_func):
@@ -92,29 +92,37 @@ class Chain:
 # class structure for MCMC
 class MCMC:
     
-    def __init__(self, model, jump_blend, num_chains, len_history):
+    def __init__(self, model, num_samples, jump_blend, num_chains, len_history):
         self.model = model
+        self.num_samples = num_samples
         self.jump_blend = jump_blend
         self.num_chains = num_chains
         self.len_history = len_history
+        
+        # initialize randoms for jump selects, weights, and choices
+        self.jump_choices = np.random.choice(range(10), size=self.num_samples)
+        self.jump_selects = np.random.choice(self.model.num_params, size=self.num_samples)
+        self.FIM_weights = np.random.normal(loc=0., scale=1., size=self.num_samples)
+        self.DE_weights = np.random.normal(loc=0., scale=2.38/np.sqrt(2*self.model.num_params), size=self.num_samples)
+        self.DE_choices1 = np.random.choice(range(self.len_history), size=self.num_samples)
+        self.DE_choices2 = np.random.choice(range(self.len_history), size=self.num_samples)
+        self.unis_4_acceptance = np.random.uniform(0., 1., size=self.num_samples)
     
-    # update chain coordinates and lnlike_vals
-    def do_MCMC_jump(self, chains):
+    # update chain coordinates and lnlike_vals on chains
+    def do_MCMC_jump(self, chains, iteration):
+        
+        # jump type choice
+        jump_choice = self.jump_choices[iteration]
         
         # update each chain
         for j in range(self.num_chains):
-            # Fisher jump or differential evolution
-            jump_choice = np.random.choice(10)
 
             if jump_choice < self.jump_blend: # Fisher jump
-                jump_select = np.random.choice(self.model.num_params)
-                jump = np.real(1 / np.sqrt(abs(chains[j].fisher_vals[jump_select])) * chains[j].fisher_vecs[:,jump_select] * np.random.normal())
+                jump = np.real(1 / np.sqrt(abs(chains[j].fisher_vals[self.jump_selects[iteration]])) * chains[j].fisher_vecs[:,self.jump_selects[iteration]] * self.FIM_weights[iteration])
             
             else: # differential evolution
-                history_index1 = np.random.choice(range(self.len_history))
-                history_index2 = np.random.choice(range(self.len_history))
-                jump = np.real((chains[j].history[history_index1] 
-                                - chains[j].history[history_index2]) * np.random.normal(0, 2.38/np.sqrt(2*self.model.num_params)))
+                jump = np.real((chains[j].history[self.DE_choices1[iteration]] 
+                                - chains[j].history[self.DE_choices2[iteration]]) * self.DE_weights[iteration])
             
             # if jump is NaN propose Gaussian random jump
             # (jump may be NaN because of Fisher matrix)
@@ -129,7 +137,7 @@ class MCMC:
             
             
     # do MCMC
-    def get_chains(self, num_samples):
+    def get_chains(self):
         
         # rename objects
         NP = self.model.num_params
@@ -142,8 +150,8 @@ class MCMC:
         # instantiate chains
         chains = []
         for j in range(NC):
-            samples = np.zeros((num_samples, NP))
-            ln_posteriors = np.zeros(num_samples)
+            samples = np.zeros((self.num_samples, NP))
+            ln_posteriors = np.zeros(self.num_samples)
             samples[0] = self.model.get_draws_in_domain(1)
             ln_posteriors[0] = self.model.eval_lnposterior(samples[0], temps[j])
             history = self.model.get_draws_in_domain(self.len_history)
@@ -154,10 +162,10 @@ class MCMC:
         
         
         # main MCMC loop
-        for i in range(num_samples - 1):
+        for i in range(self.num_samples - 1):
             
             # update progress
-            if i % (num_samples / 10) == 0:
+            if i % (self.num_samples / 10) == 0:
                 print(i)
                 
             # update Fisher matrix occasionally
@@ -171,7 +179,7 @@ class MCMC:
             
             # jump proposal
             # this updates the chains' coordinates and lnlike_val
-            MCMC.do_MCMC_jump(self, chains)
+            MCMC.do_MCMC_jump(self, chains, i)
 
             # accept or reject jump proposal     
             for j in range(NC):      
@@ -180,7 +188,7 @@ class MCMC:
                 acc_ratio = np.exp(chains[j].posterior_val - chains[j].posterior_vals[i])
             
                 # accept or reject jump proposal
-                if np.random.uniform() < acc_ratio: # accept
+                if self.unis_4_acceptance[i] < acc_ratio: # accept
                     chains[j].accept_count += 1
                     chains[j].samples[i+1,:] = chains[j].coordinates.copy()
                     chains[j].posterior_vals[i+1] = chains[j].posterior_val.copy()

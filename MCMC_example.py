@@ -45,10 +45,10 @@ num_chains = 5
 len_history = 1_000
 num_samples = int(1e5)
 
-mcmc = MCMC(model, jump_blend, num_chains, len_history)
+mcmc = MCMC(model, num_samples, jump_blend, num_chains, len_history)
 
 # do MCMC!
-chains = mcmc.get_chains(num_samples)
+chains = mcmc.get_chains()
 
 
 ###################################################################
