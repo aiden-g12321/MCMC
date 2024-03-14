@@ -75,11 +75,11 @@ class Model:
 # class structure for a chain used in MCMCs
 class Chain:
     
-    def __init__(self, coordinates, posterior_val, samples, posterior_vals, history, temperature, fisher_vals, fisher_vecs, accept_count, reject_count):
+    def __init__(self, coordinates, lnpost_val, samples, lnpost_vals, history, temperature, fisher_vals, fisher_vecs, accept_count, reject_count):
         self.coordinates = coordinates
-        self.posterior_val = posterior_val
+        self.lnpost_val = lnpost_val
         self.samples = samples
-        self.posterior_vals = posterior_vals
+        self.lnpost_vals = lnpost_vals
         self.history = history
         self.temperature = temperature
         self.fisher_vals = fisher_vals
@@ -100,42 +100,47 @@ class MCMC:
         self.len_history = len_history
         
         # initialize randoms for jump selects, weights, and choices
-        self.jump_choices = np.random.choice(range(10), size=self.num_samples)
+        self.jump_choices = np.random.choice(range(2), size=self.num_samples, p=self.jump_blend)
         self.jump_selects = np.random.choice(self.model.num_params, size=self.num_samples)
         self.FIM_weights = np.random.normal(loc=0., scale=1., size=self.num_samples)
         self.DE_weights = np.random.normal(loc=0., scale=2.38/np.sqrt(2*self.model.num_params), size=self.num_samples)
         self.DE_choices1 = np.random.choice(range(self.len_history), size=self.num_samples)
         self.DE_choices2 = np.random.choice(range(self.len_history), size=self.num_samples)
-        self.unis_4_acceptance = np.random.uniform(0., 1., size=self.num_samples)
+        self.rands_4_acceptance = np.random.uniform(0., 1., size=self.num_samples)
     
-    # update chain coordinates and lnlike_vals on chains
-    def do_MCMC_jump(self, chains, iteration):
-        
-        # jump type choice
-        jump_choice = self.jump_choices[iteration]
-        
-        # update each chain
+    # update chain using Fisher information jump
+    def do_Fisher_jump(self, chains, iteration):
         for j in range(self.num_chains):
-
-            if jump_choice < self.jump_blend: # Fisher jump
-                jump = np.real(1 / np.sqrt(abs(chains[j].fisher_vals[self.jump_selects[iteration]])) * chains[j].fisher_vecs[:,self.jump_selects[iteration]] * self.FIM_weights[iteration])
-            
-            else: # differential evolution
-                jump = np.real((chains[j].history[self.DE_choices1[iteration]] 
-                                - chains[j].history[self.DE_choices2[iteration]]) * self.DE_weights[iteration])
-            
+            jump = np.real(1 / np.sqrt(abs(chains[j].fisher_vals[self.jump_selects[iteration]])) * chains[j].fisher_vecs[:,self.jump_selects[iteration]] * self.FIM_weights[iteration])
             # if jump is NaN propose Gaussian random jump
             # (jump may be NaN because of Fisher matrix)
             if np.isnan(jump).any():
                 print('JUMP IS NAN')
                 jump = np.random.normal(0, 1, self.model.num_params)
-            
+            # update chain coordinates and ln(posterior) value
             chains[j].coordinates += jump
-            chains[j].posterior_val = self.model.eval_lnposterior(chains[j].coordinates, chains[j].temperature)
-        
+            chains[j].lnpost_val = self.model.eval_lnposterior(chains[j].coordinates, chains[j].temperature)
         return
-            
-            
+    
+    # update chain using differential evolution jump
+    def do_DE_jump(self, chains, iteration):
+        for j in range(self.num_chains):
+            jump = np.real((chains[j].history[self.DE_choices1[iteration]] 
+                            - chains[j].history[self.DE_choices2[iteration]]) * self.DE_weights[iteration])
+            # update chain coordinates and ln(posterior) value
+            chains[j].coordinates += jump
+            chains[j].lnpost_val = self.model.eval_lnposterior(chains[j].coordinates, chains[j].temperature)
+        return
+    
+    # do MCMC jump
+    def do_MCMC_jump(self, chains, iteration):
+        jump_choice = self.jump_choices[iteration]
+        if jump_choice == 0: # Fisher jump
+            self.do_Fisher_jump(chains, iteration)
+        if jump_choice == 1: # diffential evolution
+            self.do_DE_jump(chains, iteration)
+        return
+         
     # do MCMC
     def get_chains(self):
         
@@ -185,17 +190,17 @@ class MCMC:
             for j in range(NC):      
             
                 # calculate acceptance ratio
-                acc_ratio = np.exp(chains[j].posterior_val - chains[j].posterior_vals[i])
+                acc_ratio = np.exp(chains[j].lnpost_val - chains[j].lnpost_vals[i])
             
                 # accept or reject jump proposal
-                if self.unis_4_acceptance[i] < acc_ratio: # accept
+                if self.rands_4_acceptance[i] < acc_ratio: # accept
                     chains[j].accept_count += 1
                     chains[j].samples[i+1,:] = chains[j].coordinates.copy()
-                    chains[j].posterior_vals[i+1] = chains[j].posterior_val.copy()
+                    chains[j].lnpost_vals[i+1] = chains[j].lnpost_val.copy()
                 else: # reject
                     chains[j].reject_count += 1
                     chains[j].samples[i+1,:] = chains[j].coordinates = chains[j].samples[i,:].copy()
-                    chains[j].posterior_vals[i+1] = chains[j].posterior_val = chains[j].posterior_vals[i].copy()
+                    chains[j].lnpost_vals[i+1] = chains[j].lnpost_val = chains[j].lnpost_vals[i].copy()
             
 
             # ocassionally swap coordinates of chains at different temperatures
@@ -207,11 +212,11 @@ class MCMC:
                     swap_prob = (self.model.eval_lnposterior(chains[ind+1].coordinates,chains[ind].temperature)*self.model.eval_lnposterior(chains[ind].coordinates,chains[ind+1].temperature)) / (self.model.eval_lnposterior(chains[ind].coordinates,chains[ind].temperature)*self.model.eval_lnposterior(chains[ind+1].coordinates,chains[ind+1].temperature))
                     if np.random.uniform() < swap_prob: # accept swap
                         store_coordinates = chains[ind].coordinates.copy()
-                        store_lnposterior = chains[ind].posterior_val.copy()
+                        store_lnposterior = chains[ind].lnpost_val.copy()
                         chains[ind].coordinates = chains[ind+1].coordinates.copy()
-                        chains[ind].posterior_val = chains[ind].posterior_vals[i+1] = chains[ind+1].posterior_val.copy() * chains[ind+1].temperature / chains[ind].temperature
+                        chains[ind].lnpost_val = chains[ind].lnpost_vals[i+1] = chains[ind+1].lnpost_val.copy() * chains[ind+1].temperature / chains[ind].temperature
                         chains[ind+1].coordinates = store_coordinates
-                        chains[ind+1].posterior_val = store_lnposterior * chains[ind].temperature / chains[ind+1].temperature
+                        chains[ind+1].lnpost_val = store_lnposterior * chains[ind].temperature / chains[ind+1].temperature
         
         return chains
 
@@ -256,17 +261,19 @@ class PostProcessing:
         plt.ylabel('parameter value')
         plt.legend(loc='lower right')
         plt.show()
+        return
         
     # plot ln(posterior) samples
     def plt_lnlikes(self):
         
         for i in range(self.mcmc.num_chains):
-            plt.plot(self.chains[i].posterior_vals, color=self.temp_colors[i], label=self.temp_labels[i], alpha=0.5)
+            plt.plot(self.chains[i].lnpost_vals, color=self.temp_colors[i], label=self.temp_labels[i], alpha=0.5)
         
         plt.xlabel('MCMC iteration')
         plt.ylabel('log(posterior)')
         plt.legend(loc='upper right')
         plt.show()
+        return
         
         
     # plot corner plot
@@ -288,6 +295,6 @@ class PostProcessing:
                     ax.axvline(params[xi])
                     ax.axhline(params[yi])
                     ax.plot(params[xi], params[yi])
-        
-        return fig
+        plt.show()
+        return
     

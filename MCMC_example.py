@@ -41,7 +41,7 @@ model = Model(num_params, param_mins, param_maxs, param_labels, in_domain, lnlik
 ###################################################################
 
 
-jump_blend = 5 # jump_blend/10 is fraction of Fisher jumps (otherwise DE)
+jump_blend = [0.5, 0.5]
 num_chains = 5
 len_history = 1_000
 num_samples = int(1e5)
@@ -61,13 +61,11 @@ print('Completed ' + str(num_samples) + ' MCMC iterations in ' + str(duration) +
 ###################################################################
 
 params_injs = [[0., -9./8.], [0., 2.]]
+burnin = int(num_samples / 10)
 pp = PostProcessing(model, chains, mcmc, params_injs)
 
 print('acceptance fraction per chains:')
 print(pp.get_acc_frac())
 pp.plt_trace()
 pp.plt_lnlikes()
-
-burnin = int(num_samples / 10)
-fig = pp.plt_corner(burnin)
-fig.savefig('corner.png')
+pp.plt_corner(burnin)
