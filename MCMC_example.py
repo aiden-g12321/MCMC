@@ -43,11 +43,10 @@ model = Model(num_params, param_mins, param_maxs, param_labels, in_domain_func, 
 ######################## DO MCMC ##################################
 ###################################################################
 
-# define jump blend, number of chains, length of history, and number of samples to draw
-jump_blend = [0.5, 0.5]
-num_chains = 5
-len_history = 1_000
-num_samples = int(1e5)
+jump_blend = [0.5, 0.5]  # 50% Fisher jumps, 50% differential evolution
+num_chains = 5  # number of chains to evolve with parallel-tempering
+len_history = 1_000  # length of adaptive history used in differential evolution
+num_samples = int(1e5)  # number of samples drawn with MCMC
 
 # construct MCMC object
 mcmc = MCMC(model, num_samples, jump_blend, num_chains, len_history)
@@ -64,8 +63,12 @@ print('Completed ' + str(num_samples) + ' MCMC iterations in ' + str(duration) +
 ###################### POST-PROCESSING ############################
 ###################################################################
 
+# define injected parameters to be used in trace and corner plots
 params_injs = [[0., -9./8.], [0., 2.]]
+# MCMC burn-in length
 burnin = int(num_samples / 10)
+
+# construct post-processing object
 pp = PostProcessing(model, chains, mcmc, params_injs)
 
 # print acceptance fractions
