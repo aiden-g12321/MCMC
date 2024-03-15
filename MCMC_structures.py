@@ -231,6 +231,7 @@ class PostProcessing:
         self.mcmc = mcmc
         self.params_injs = params_injs
         
+        # colors and labels for plotting
         self.temp_colors = plt.get_cmap('jet')(np.linspace(0.1, 0.9, self.mcmc.num_chains))
         self.temp_labels = [str(chain.temperature) for chain in self.chains]
         self.param_colors = plt.get_cmap('jet')(np.linspace(0.1, 0.9, self.model.num_params))
@@ -244,19 +245,22 @@ class PostProcessing:
             acc_fracs.append(acc_frac)
         return acc_fracs
     
+    # estimate maximum a posteriori (MAP)
+    def get_MAP(self, chain_ind=0):
+        ln_posterior_vals = self.chains[chain_ind].lnpost_vals
+        MAP_index = list(ln_posterior_vals).index(max(ln_posterior_vals))
+        return self.chains[chain_ind].samples[MAP_index]
+    
     # make trace plot
     def plt_trace(self, chain_ind=0):
-        
         if self.params_injs != None:
             for i in range(self.model.num_params):
                 plt.plot(self.chains[chain_ind].samples[:,i], color=self.param_colors[i], alpha=0.5, label=self.param_labels[i])
                 for params in self.params_injs:
                     plt.axhline(params[i], alpha=0.7, color=self.param_colors[i])
-
         else:
             for i in range(self.model.num_params):
                 plt.plot(self.chains[chain_ind].samples[:,i], color=self.param_colors[i], alpha=0.5, label=self.param_labels[i])
-       
         plt.xlabel('MCMC iteration')
         plt.ylabel('parameter value')
         plt.legend(loc='lower right')
@@ -265,20 +269,16 @@ class PostProcessing:
         
     # plot ln(posterior) samples
     def plt_lnlikes(self):
-        
         for i in range(self.mcmc.num_chains):
             plt.plot(self.chains[i].lnpost_vals, color=self.temp_colors[i], label=self.temp_labels[i], alpha=0.5)
-        
         plt.xlabel('MCMC iteration')
         plt.ylabel('log(posterior)')
         plt.legend(loc='upper right')
         plt.show()
         return
         
-        
     # plot corner plot
     def plt_corner(self, burnin, chain_ind=0):
-        
         NP = self.model.num_params
         fig = corner.corner(self.chains[chain_ind].samples[burnin:], labels=self.param_labels, range=[0.99]*NP)
         axes = np.array(fig.axes).reshape((NP, NP))
@@ -297,4 +297,5 @@ class PostProcessing:
                     ax.plot(params[xi], params[yi])
         plt.show()
         return
+        
     

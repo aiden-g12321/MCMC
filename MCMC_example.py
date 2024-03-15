@@ -66,6 +66,8 @@ pp = PostProcessing(model, chains, mcmc, params_injs)
 
 print('acceptance fraction per chains:')
 print(pp.get_acc_frac())
+print('MAP parameters:')
+print(pp.get_MAP())
 pp.plt_trace()
 pp.plt_lnlikes()
 pp.plt_corner(burnin)
