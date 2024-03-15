@@ -14,7 +14,7 @@ param_maxs = [5., 5.]
 param_labels = ['x', 'y']
 
 # returns true if parameters are in allowed domain, otherwise false
-def in_domain(params):
+def in_domain_func(params):
     in_dom = True
     for i in range(num_params):
         if params[i] < param_mins[i] or params[i] > param_maxs[i]:
@@ -36,7 +36,7 @@ def lnprior_func(params):
         return 0
 
 # construct model object
-model = Model(num_params, param_mins, param_maxs, param_labels, in_domain, lnlike_func, lnprior_func)
+model = Model(num_params, param_mins, param_maxs, param_labels, in_domain_func, lnlike_func, lnprior_func)
 
 
 ###################################################################
