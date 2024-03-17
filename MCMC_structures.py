@@ -7,7 +7,7 @@ import corner
 # class structure for model
 class Model:
     
-    def __init__(self, num_params, param_mins, param_maxs, param_labels, in_domain_func, lnlike_func, lnprior_func):
+    def __init__(self, num_params, param_mins, param_maxs, param_labels, in_domain_func, lnlike_func, lnprior_func, get_fisher_func=None):
         self.num_params = num_params
         self.param_mins = param_mins
         self.param_maxs = param_maxs
@@ -15,6 +15,8 @@ class Model:
         self.in_domain_func = in_domain_func
         self.lnlike_func = lnlike_func
         self.lnprior_func = lnprior_func
+        self.get_fisher_func = get_fisher_func
+        
         
     # evaluate ln(likelihood) for given parameter values and temperature
     def eval_lnlike(self, params, temperature):
@@ -43,15 +45,18 @@ class Model:
 
     # get Fisher information matrix
     def get_fisher(self, params, temperature):
-        NP = self.num_params
-        FIM = np.zeros((self.num_params, self.num_params))
-        for j in range(self.num_params):
-            dstep1 = np.zeros(self.num_params)
-            dstep1[j] = Model.step_size
-            for k in range(j, NP):
-                FIM[j,k] = FIM[k,j] = -(self.partial_lnposterior(params + dstep1, k, temperature) 
-                                              - self.partial_lnposterior(params - dstep1, k, temperature)) / (2 * Model.step_size)
-        return FIM
+        if self.get_fisher_func is not None:
+            return self.get_fisher_func(params)
+        else:
+            NP = self.num_params
+            FIM = np.zeros((self.num_params, self.num_params))
+            for j in range(self.num_params):
+                dstep1 = np.zeros(self.num_params)
+                dstep1[j] = Model.step_size
+                for k in range(j, NP):
+                    FIM[j,k] = FIM[k,j] = -(self.partial_lnposterior(params + dstep1, k, temperature) 
+                                                - self.partial_lnposterior(params - dstep1, k, temperature)) / (2 * Model.step_size)
+            return FIM
     
     # get inverse FIM with SVD
     def get_inv_fisher(self, params, temperature):
