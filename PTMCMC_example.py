@@ -43,8 +43,8 @@ model = Model(num_params, param_mins, param_maxs, param_labels, in_domain_func, 
 ######################## DO MCMC ##################################
 ###################################################################
 
-jump_blend = [0.4, 0.3, 0.3]  # [% Fisher jumps, % differential evolution, % Lorentzian jump]
-num_chains = 1  # number of chains to evolve with parallel-tempering
+jump_blend = [0.3, 0.3, 0.4]  # 50% Fisher jumps, 50% differential evolution
+num_chains = 5  # number of chains to evolve with parallel-tempering
 num_samples = int(1e5)  # number of samples drawn with MCMC
 
 # construct MCMC object
@@ -71,6 +71,8 @@ pp = PostProcessing(chains, mcmc, params_injs)
 # print acceptance fractions
 print('acceptance fraction per chains:')
 print(pp.get_acc_frac())
+print('chain swap acceptance fraction:')
+print(pp.get_chain_swap_frac())
 
 # print maximum a posteriori (MAP) parameters
 print('MAP parameters:')
