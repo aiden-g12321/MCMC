@@ -113,12 +113,15 @@ class MCMC:
         self.len_history = len_history
         
         # randomly choose jump choices
-        self.jump_choices = np.random.choice(range(3), size=self.num_samples, p=jump_blend)
+        self.jump_choices = np.random.choice(range(len(self.jump_blend)), size=self.num_samples, p=jump_blend)
         self.chain_swap_choices = np.random.choice(range(10), size=self.num_samples)
         
-        # track parallel-tempering swap acceptance fraction
-        self.chain_swap_accept_count = 0
-        self.chain_swap_reject_count = 0
+        # if input is multiple chains, do parallel-tempering
+        if self.num_chains > 1:
+            self.chain_swap_accept_count = 0
+            self.chain_swap_reject_count = 0
+            self.chain_swap_choices = np.random.choice(range(2), p=[0.25, 0.75], size=self.num_samples)
+        
         
         
     # initialize chains for MCMC
@@ -159,6 +162,7 @@ class MCMC:
     def do_Fisher_jump(self, chains, iteration):
         for j in range(self.num_chains):
             chain = chains[j]
+            # get Fisher jump: eigenvector scaled by inverse square-root of eigenvalue
             Fisher_weight = 1 / np.sqrt(abs(chain.fisher_vals[chain.FIM_jump_selects[iteration]])) * chain.FIM_weights[iteration]
             jump = np.real(Fisher_weight * chain.fisher_vecs[:,chain.FIM_jump_selects[iteration]])
             # if jump is NaN propose Gaussian random jump
@@ -166,9 +170,23 @@ class MCMC:
             if np.isnan(jump).any():
                 print('JUMP IS NAN')
                 jump = np.random.normal(0, 1, self.model.num_params)
+            
             # update chain coordinates and ln(posterior) value
             chain.coordinates += jump
             chain.lnpost_val = self.model.eval_lnposterior(chain.coordinates, chain.temperature)
+            
+            # calculate acceptance ratio
+            acc_ratio = np.exp(chain.lnpost_val - chain.lnpost_vals[iteration])
+            
+            # accept or reject jump proposal
+            if chain.rands_4_acceptance[iteration] < acc_ratio:  # accept
+                chain.accept_counts[self.jump_choices[iteration]] += 1
+                chain.samples[iteration+1,:] = chain.history[iteration%self.len_history] = chain.coordinates.copy()
+                chain.lnpost_vals[iteration+1] = chain.lnpost_val
+            if chain.rands_4_acceptance[iteration] >= acc_ratio:  # reject
+                chain.reject_counts[self.jump_choices[iteration]] += 1
+                chain.samples[iteration+1,:] = chain.coordinates = chain.samples[iteration,:]
+                chain.lnpost_vals[iteration+1] = chain.lnpost_val = chain.lnpost_vals[iteration]  
         return
     
     # update chain using differential evolution jump
@@ -177,24 +195,136 @@ class MCMC:
             chain = chains[j]
             jump = np.real((chain.history[chain.DE_choices1[iteration]] 
                             - chain.history[chain.DE_choices2[iteration]]) * chain.DE_weights[iteration])
+            
             # update chain coordinates and ln(posterior) value
             chain.coordinates += jump
             chain.lnpost_val = self.model.eval_lnposterior(chain.coordinates, chain.temperature)
+            
+            # calculate acceptance ratio
+            acc_ratio = np.exp(chain.lnpost_val - chain.lnpost_vals[iteration])
+            
+            # accept or reject jump proposal
+            if chain.rands_4_acceptance[iteration] < acc_ratio:  # accept
+                chain.accept_counts[self.jump_choices[iteration]] += 1
+                chain.samples[iteration+1,:] = chain.history[iteration%self.len_history] = chain.coordinates.copy()
+                chain.lnpost_vals[iteration+1] = chain.lnpost_val
+            if chain.rands_4_acceptance[iteration] >= acc_ratio:  # reject
+                chain.reject_counts[self.jump_choices[iteration]] += 1
+                chain.samples[iteration+1,:] = chain.coordinates = chain.samples[iteration,:]
+                chain.lnpost_vals[iteration+1] = chain.lnpost_val = chain.lnpost_vals[iteration]
         return
     
-    # update chain using Lorentzian proposal
-    def do_Lorentzian_jump(self, chains):
+     # update chain with draw from Gaussian distribution
+    def do_Gaussian_jump(self, chains, iteration):
         for j in range(self.num_chains):
+            chain = chains[j]
+            chain.coordinates += np.random.normal(loc=0., scale=1., size=self.model.num_params)
+            chain.lnpost_val = self.model.eval_lnposterior(chain.coordinates, chain.temperature)
+            # calculate acceptance ratio
+            acc_ratio = np.exp(chain.lnpost_val - chain.lnpost_vals[iteration])
+            # accept or reject jump proposal
+            if chain.rands_4_acceptance[iteration] < acc_ratio:  # accept
+                chain.accept_counts[self.jump_choices[iteration]] += 1
+                chain.samples[iteration+1,:] = chain.history[iteration%self.len_history] = chain.coordinates.copy()
+                chain.lnpost_vals[iteration+1] = chain.lnpost_val
+            if chain.rands_4_acceptance[iteration] >= acc_ratio:  # reject
+                chain.reject_counts[self.jump_choices[iteration]] += 1
+                chain.samples[iteration+1,:] = chain.coordinates = chain.samples[iteration,:]
+                chain.lnpost_vals[iteration+1] = chain.lnpost_val = chain.lnpost_vals[iteration]  
+        return
+    
+    
+    # update chain using Lorentzian proposal
+    def do_Lorentzian_jump(self, chains, iteration):
+        for j in range(self.num_chains):
+            chain = chains[j]
             r2=2.
             while(r2>1):
                 R = np.random.random(size=self.model.num_params)
                 r2 = np.sum(R**2)
             mhat = R/np.sqrt(r2)
             jump = 0.5 * np.tan(np.pi*(np.random.random()-0.5)) * mhat
+            
             # update chain coordinates and ln(posterior) value
-            chains[j].coordinates += jump
-            chains[j].lnpost_val = self.model.eval_lnposterior(chains[j].coordinates, chains[j].temperature)
+            chain.coordinates += jump
+            chain.lnpost_val = self.model.eval_lnposterior(chain.coordinates, chain.temperature)
+            
+            # calculate acceptance ratio
+            acc_ratio = np.exp(chain.lnpost_val - chain.lnpost_vals[iteration])
+            
+            # accept or reject jump proposal
+            if chain.rands_4_acceptance[iteration] < acc_ratio:  # accept
+                chain.accept_counts[self.jump_choices[iteration]] += 1
+                chain.samples[iteration+1,:] = chain.history[iteration%self.len_history] = chain.coordinates.copy()
+                chain.lnpost_vals[iteration+1] = chain.lnpost_val
+            if chain.rands_4_acceptance[iteration] >= acc_ratio:  # reject
+                chain.reject_counts[self.jump_choices[iteration]] += 1
+                chain.samples[iteration+1,:] = chain.coordinates = chain.samples[iteration,:]
+                chain.lnpost_vals[iteration+1] = chain.lnpost_val = chain.lnpost_vals[iteration]
         return
+
+ 
+    # update chain using delayed rejection
+    def do_DR_jump(self, chains, iteration):
+        
+        # FIRST DO GAUSSIAN RANDOM JUMP
+        for j in range(self.num_chains):
+            chain = chains[j]
+            # chain.coordinates += np.random.normal(loc=0., scale=1.e-1, size=self.model.num_params)
+            Fisher_weight = 1 / np.sqrt(abs(chain.fisher_vals[chain.FIM_jump_selects[iteration]])) * chain.FIM_weights[iteration]
+            jump = np.real(Fisher_weight * chain.fisher_vecs[:,chain.FIM_jump_selects[iteration]])
+            chain.coordinates += jump
+            chain.lnpost_val = self.model.eval_lnposterior(chain.coordinates, chain.temperature)
+            # calculate acceptance ratio
+            acc_ratio = np.exp(chain.lnpost_val - chain.lnpost_vals[iteration])
+            # accept or reject jump proposal
+            if chain.rands_4_acceptance[iteration] < acc_ratio:  # accept
+                chain.accept_counts[self.jump_choices[iteration]] += 1
+                chain.samples[iteration+1,:] = chain.history[iteration%self.len_history] = chain.coordinates.copy()
+                chain.lnpost_vals[iteration+1] = chain.lnpost_val
+                
+            
+            # SECOND STAGE PROPOSAL
+            if chain.rands_4_acceptance[iteration] >= acc_ratio:  # reject
+                xi1 = chain.coordinates.copy()
+                lnpi1 = chain.lnpost_val
+                Fisher_weight = 1 / np.sqrt(abs(chain.fisher_vals[chain.FIM_jump_selects[iteration-1]])) * chain.FIM_weights[iteration-1]
+                jump = np.real(Fisher_weight * chain.fisher_vecs[:,chain.FIM_jump_selects[iteration-1]])
+                # xi2 = xi1 + np.random.normal(loc=0., scale=1.e-1, size=self.model.num_params)
+                xi2 = xi1 + jump
+                lnpi2 = self.model.eval_lnposterior(xi2, chain.temperature)
+                acc_prob = np.exp(lnpi2-chain.lnpost_vals[iteration]) * (1 - min(1, np.exp(lnpi1-lnpi2))) / (1 - min(1, np.exp(lnpi1 - chain.lnpost_vals[iteration])))
+                rand4accept = np.random.uniform()
+                if rand4accept <= acc_prob:  # accept second stage proposal
+                    chain.accept_counts[self.jump_choices[iteration]] += 1
+                    chain.samples[iteration+1,:] = chain.history[iteration%self.len_history] = xi2
+                    chain.lnpost_vals[iteration+1] = lnpi2
+                if rand4accept > acc_prob:  # reject second stage proposal
+                    chain.reject_counts[self.jump_choices[iteration]] += 1
+                    chain.samples[iteration+1,:] = chain.coordinates = chain.samples[iteration,:].copy()
+                    chain.lnpost_vals[iteration+1] = chain.lnpost_val = chain.lnpost_vals[iteration].copy()
+        return
+    
+    # do chain swap according to parallel tempering
+    def do_chain_swap(self, chains, iteration):    
+        num_swaps = self.num_chains - 1
+        for k in range(num_swaps):
+            # randomly select chain to try swap with chain at next highest temperature
+            ind = np.random.choice(self.num_chains - 1)
+            swap_prob = np.exp(self.model.eval_lnposterior(chains[ind+1].coordinates,chains[ind].temperature) + self.model.eval_lnposterior(chains[ind].coordinates,chains[ind+1].temperature) - self.model.eval_lnposterior(chains[ind].coordinates,chains[ind].temperature) - self.model.eval_lnposterior(chains[ind+1].coordinates,chains[ind+1].temperature))
+            if np.random.uniform() < swap_prob:  # accept chain swap
+                self.chain_swap_accept_count += 1
+                store_coordinates = chains[ind].coordinates.copy()
+                store_lnposterior = chains[ind].lnpost_val
+                store_history = chains[ind].history.copy()
+                chains[ind].coordinates = chains[ind+1].coordinates.copy()
+                chains[ind].lnpost_val = chains[ind].lnpost_vals[iteration] = chains[ind+1].lnpost_val * chains[ind+1].temperature / chains[ind].temperature
+                chains[ind].history = chains[ind+1].history.copy()
+                chains[ind+1].coordinates = store_coordinates.copy()
+                chains[ind+1].lnpost_val = chains[ind+1].lnpost_vals[iteration] = store_lnposterior * chains[ind].temperature / chains[ind+1].temperature
+                chains[ind+1].history = store_history.copy()
+            else:  # reject chain swap
+                self.chain_swap_reject_count += 1
             
     
     # do MCMC jump
@@ -204,8 +334,17 @@ class MCMC:
             self.do_Fisher_jump(chains, iteration)
         if jump_choice == 1:  # diffential evolution
             self.do_DE_jump(chains, iteration)
-        if jump_choice == 2:  # Lorentzian jump
-            self.do_Lorentzian_jump(chains)
+        if jump_choice == 2:  # Gaussian jump
+            self.do_Gaussian_jump(chains, iteration)
+        if jump_choice == 3:  # Lorentzian jump
+            self.do_Lorentzian_jump(chains, iteration)
+        if jump_choice == 4:  # jump with delayed rejection
+            self.do_DR_jump(chains, iteration)
+        
+        # occasionally do parallel-tempering chain swaps
+        if self.chain_swap_choices[iteration] == 0:
+            self.do_chain_swap(chains, iteration)
+        
         return
          
     # do MCMC
@@ -233,42 +372,7 @@ class MCMC:
             # jump proposal
             # this updates the chains' coordinates and lnlike_val
             MCMC.do_MCMC_jump(self, chains, i)
-
-            # accept or reject jump proposal     
-            for j in range(self.num_chains):      
-            
-                # calculate acceptance ratio
-                acc_ratio = np.exp(chains[j].lnpost_val - chains[j].lnpost_vals[i])
-            
-                # accept or reject jump proposal
-                if chains[j].rands_4_acceptance[i] < acc_ratio: # accept
-                    chains[j].accept_counts[self.jump_choices[i]] += 1
-                    chains[j].samples[i+1,:] = chains[j].history[i%self.len_history] = chains[j].coordinates.copy()
-                    chains[j].lnpost_vals[i+1] = chains[j].lnpost_val.copy()
-                else: # reject
-                    chains[j].reject_counts[self.jump_choices[i]] += 1
-                    chains[j].samples[i+1,:] = chains[j].coordinates = chains[j].samples[i,:].copy()
-                    chains[j].lnpost_vals[i+1] = chains[j].lnpost_val = chains[j].lnpost_vals[i].copy()
-            
-
-            # ocassionally swap coordinates of chains at different temperatures
-            if self.num_chains > 1 and self.chain_swap_choices[i] == 0:
-                num_swaps = self.num_chains - 1
-                for k in range(num_swaps):
-                    # randomly select index to try swap with index + 1
-                    ind = np.random.choice(self.num_chains - 1)
-                    # swap_prob = (self.model.eval_lnposterior(chains[ind+1].coordinates,chains[ind].temperature)*self.model.eval_lnposterior(chains[ind].coordinates,chains[ind+1].temperature)) / (self.model.eval_lnposterior(chains[ind].coordinates,chains[ind].temperature)*self.model.eval_lnposterior(chains[ind+1].coordinates,chains[ind+1].temperature))
-                    swap_prob = np.exp(self.model.eval_lnposterior(chains[ind+1].coordinates,chains[ind].temperature) + self.model.eval_lnposterior(chains[ind].coordinates,chains[ind+1].temperature) - self.model.eval_lnposterior(chains[ind].coordinates,chains[ind].temperature) - self.model.eval_lnposterior(chains[ind+1].coordinates,chains[ind+1].temperature))
-                    if np.random.uniform() < swap_prob: # accept swap
-                        self.chain_swap_accept_count += 1
-                        store_coordinates = chains[ind].coordinates.copy()
-                        store_lnposterior = chains[ind].lnpost_val.copy()
-                        chains[ind].coordinates = chains[ind+1].coordinates.copy()
-                        chains[ind].lnpost_val = chains[ind].lnpost_vals[i+1] = chains[ind+1].lnpost_val.copy() * chains[ind+1].temperature / chains[ind].temperature
-                        chains[ind+1].coordinates = store_coordinates
-                        chains[ind+1].lnpost_val = store_lnposterior * chains[ind].temperature / chains[ind+1].temperature
-                    else:
-                        self.chain_swap_reject_count += 1
+                
         return chains
 
 
@@ -338,7 +442,7 @@ class PostProcessing:
     # plot corner plot
     def plt_corner(self, chain_ind=0):
         NP = self.num_params
-        fig = corner.corner(self.chains[chain_ind].samples[self.burnin:], labels=self.param_labels, range=[0.99]*NP)
+        fig = corner.corner(self.chains[chain_ind].samples[self.burnin:], labels=self.param_labels, range=[0.9]*NP, bins=30)
         axes = np.array(fig.axes).reshape((NP, NP))
         # Loop over the diagonal
         for i in range(NP):

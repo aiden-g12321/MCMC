@@ -43,7 +43,7 @@ model = Model(num_params, param_mins, param_maxs, param_labels, in_domain_func, 
 ######################## DO MCMC ##################################
 ###################################################################
 
-jump_blend = [0.4, 0.3, 0.3]  # [% Fisher jumps, % differential evolution, % Lorentzian jump]
+jump_blend = [0.5, 0., 0.0, 0., 0.5]  # [% Fisher jumps, % differential evolution, % Gaussian jump, % Lorentzian jump, % delayed rejection jump]
 num_chains = 1  # number of chains to evolve with parallel-tempering
 num_samples = int(1e5)  # number of samples drawn with MCMC
 
