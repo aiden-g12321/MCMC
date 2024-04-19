@@ -218,7 +218,7 @@ class MCMC:
     def do_Gaussian_jump(self, chains, iteration):
         for j in range(self.num_chains):
             chain = chains[j]
-            chain.coordinates += np.random.normal(loc=0., scale=1., size=self.model.num_params)
+            chain.coordinates += np.random.normal(loc=0., scale=1.e-1, size=self.model.num_params)
             chain.lnpost_val = self.model.eval_lnposterior(chain.coordinates, chain.temperature)
             # calculate acceptance ratio
             acc_ratio = np.exp(chain.lnpost_val - chain.lnpost_vals[iteration])
@@ -270,9 +270,9 @@ class MCMC:
         # FIRST DO GAUSSIAN RANDOM JUMP
         for j in range(self.num_chains):
             chain = chains[j]
-            # chain.coordinates += np.random.normal(loc=0., scale=1.e-1, size=self.model.num_params)
+            # chain.coordinates += np.random.normal(loc=0., scale=1.e0, size=self.model.num_params)
             Fisher_weight = 1 / np.sqrt(abs(chain.fisher_vals[chain.FIM_jump_selects[iteration]])) * chain.FIM_weights[iteration]
-            jump = np.real(Fisher_weight * chain.fisher_vecs[:,chain.FIM_jump_selects[iteration]])
+            jump = np.real(Fisher_weight * chain.fisher_vecs[:,chain.FIM_jump_selects[iteration]]) * np.random.choice([1, 10], p=[0.2, 0.8])
             chain.coordinates += jump
             chain.lnpost_val = self.model.eval_lnposterior(chain.coordinates, chain.temperature)
             # calculate acceptance ratio
@@ -442,7 +442,7 @@ class PostProcessing:
     # plot corner plot
     def plt_corner(self, chain_ind=0):
         NP = self.num_params
-        fig = corner.corner(self.chains[chain_ind].samples[self.burnin:], labels=self.param_labels, range=[0.9]*NP, bins=30)
+        fig = corner.corner(self.chains[chain_ind].samples[self.burnin:], labels=self.param_labels, range=[0.99]*NP, bins=30)
         axes = np.array(fig.axes).reshape((NP, NP))
         # Loop over the diagonal
         for i in range(NP):

@@ -43,9 +43,10 @@ model = Model(num_params, param_mins, param_maxs, param_labels, in_domain_func, 
 ######################## DO MCMC ##################################
 ###################################################################
 
-jump_blend = [0.5, 0., 0.0, 0., 0.5]  # [% Fisher jumps, % differential evolution, % Gaussian jump, % Lorentzian jump, % delayed rejection jump]
+# [% Fisher jumps, % differential evolution, % Gaussian jump, % Lorentzian jump, % delayed rejection jump]
+jump_blend = [0., 0., 0., 0., 1.] 
 num_chains = 1  # number of chains to evolve with parallel-tempering
-num_samples = int(1e5)  # number of samples drawn with MCMC
+num_samples = int(1e6)  # number of samples drawn with MCMC
 
 # construct MCMC object
 mcmc = MCMC(model, num_samples, jump_blend, num_chains)
@@ -77,7 +78,7 @@ print('MAP parameters:')
 print(pp.get_MAP())
 
 # get auto-correlation length of samples
-print('auto-correlation length: ' + str(pp.get_auto_corr()))
+# print('auto-correlation length: ' + str(pp.get_auto_corr()))
 
 # make trace plot, plot posterior values, and corner plot
 pp.plt_trace()
